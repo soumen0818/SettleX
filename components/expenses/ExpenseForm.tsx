@@ -12,12 +12,8 @@ import type { Expense, ExpenseFormData, Member, SplitMode } from "@/types/expens
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function uid(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 function blankMember(): Member {
-  return { id: uid(), name: "", walletAddress: "", weight: 1 };
+  return { id: crypto.randomUUID(), name: "", walletAddress: "", weight: 1 };
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -26,8 +22,10 @@ interface ExpenseFormProps {
   /** Called after a successful submit — receives the new expense ID */
   onSuccess?: (expenseId?: string) => void;
   onCancel?: () => void;
-  /** Prefill the payer's name / address from connected wallet */
+  /** Prefill the payer's wallet address from connected wallet */
   currentUserPublicKey?: string | null;
+  /** Prefill the payer's name from authenticated user */
+  currentUserName?: string | null;
   /** Pre-populate members (used when creating expense within a trip) */
   defaultMembers?: Member[];
 }
@@ -38,6 +36,7 @@ export function ExpenseForm({
   onSuccess,
   onCancel,
   currentUserPublicKey,
+  currentUserName,
   defaultMembers,
 }: ExpenseFormProps) {
   const { addExpense } = useExpense();
@@ -52,9 +51,9 @@ export function ExpenseForm({
     if (defaultMembers && defaultMembers.length >= 2) return defaultMembers;
     return [
       {
-        id: uid(),
-        name: "You",
-        walletAddress: currentUserPublicKey ?? "",
+        id: crypto.randomUUID(),
+        name: currentUserName ?? "",               // pre-fill from authenticated user
+        walletAddress: currentUserPublicKey ?? "", // pre-fill from connected wallet
         weight: 1,
       },
       blankMember(),
@@ -67,10 +66,18 @@ export function ExpenseForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // ── Live split preview ──────────────────────────────────────────────────────
+  // Preview shows as soon as: valid amount + at least 2 members have names.
+  // Wallet addresses are NOT required for the preview — they are only
+  // required at submit time so that XLM payments can actually be sent.
+  const namedMembers = members.filter((m) => m.name.trim());
+
   const shares = useMemo(() => {
     const amount = parseFloat(totalAmount);
-    if (isNaN(amount) || amount <= 0 || members.length < 2) return [];
-    return calculateSplit(amount, members, paidByMemberId, splitMode);
+    if (isNaN(amount) || amount <= 0) return [];
+    const named = members.filter((m) => m.name.trim());
+    if (named.length < 2) return [];
+    // Use named members for the preview (unnamed slots are ignored)
+    return calculateSplit(amount, named, paidByMemberId, splitMode);
   }, [totalAmount, members, paidByMemberId, splitMode]);
 
   const payerName =
@@ -108,8 +115,10 @@ export function ExpenseForm({
     members.forEach((m, i) => {
       if (!m.name.trim())
         errs[`member_name_${i}`] = "Name is required.";
-      if (m.walletAddress && !isValidStellarAddress(m.walletAddress))
-        errs[`member_addr_${i}`] = "Invalid Stellar address (must start with G).";
+      if (!m.walletAddress?.trim())
+        errs[`member_addr_${i}`] = "Stellar address is required to enable payments.";
+      else if (!isValidStellarAddress(m.walletAddress.trim()))
+        errs[`member_addr_${i}`] = "Invalid Stellar address (must start with G, 56 chars).";
     });
 
     const filledNames = members.filter((m) => m.name.trim());
@@ -129,7 +138,7 @@ export function ExpenseForm({
       try {
         const cleanMembers = members.map((m) => ({
           ...m,
-          walletAddress: m.walletAddress?.trim() || undefined,
+          walletAddress: m.walletAddress?.trim(),
         }));
 
         const calculatedShares = calculateSplit(
@@ -140,7 +149,7 @@ export function ExpenseForm({
         );
 
         const expense: Expense = {
-          id: uid(),
+          id: crypto.randomUUID(),
           title: title.trim(),
           description: description.trim() || undefined,
           totalAmount: parseFloat(totalAmount).toFixed(7),
@@ -153,12 +162,18 @@ export function ExpenseForm({
           settled: false,
         };
 
-        addExpense(expense);
+        await addExpense(expense);
         toastSuccess("Expense created!", `"${expense.title}" split among ${cleanMembers.length} members.`);
         onSuccess?.(expense.id);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to create expense.";
-        toastError("Error", msg);
+      } catch (err: any) {
+        const msg = err?.message || "Failed to create expense.";
+        if (msg.includes("policy") || msg.includes("permission") || msg.includes("uuid") || msg.includes("syntax")) {
+          toastError("Save failed", "Database error. Please check your setup or try again.");
+        } else if (msg.includes("fetch") || msg.includes("network") || msg.includes("Network")) {
+          toastError("No connection", "Cannot reach server. Check your connection (WARP on?).");
+        } else {
+          toastError("Error", msg);
+        }
       } finally {
         setSubmitting(false);
       }
@@ -182,12 +197,24 @@ export function ExpenseForm({
       />
 
       {/* Description */}
-      <Textarea
-        label="Description"
-        placeholder="Optional note about the expense…"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-      />
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-[#444] uppercase tracking-wide">
+            Description
+          </label>
+          <span className={`text-[10px] font-medium tabular-nums ${
+            description.length >= 100 ? "text-red-500" : description.length >= 80 ? "text-amber-500" : "text-[#CCC]"
+          }`}>
+            {description.length}/100
+          </span>
+        </div>
+        <Textarea
+          placeholder="Add a short note about this expense…"
+          value={description}
+          maxLength={100}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
 
       {/* Amount + split mode row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -294,7 +321,7 @@ export function ExpenseForm({
                     </div>
 
                     <input
-                      placeholder="Stellar address (optional) G…"
+                      placeholder="Stellar address G… (required to pay)"
                       value={member.walletAddress ?? ""}
                       onChange={(e) => updateMember(member.id, { walletAddress: e.target.value })}
                       className={`w-full rounded-lg border px-3 py-2 text-sm bg-white outline-none transition-all font-mono
@@ -303,8 +330,25 @@ export function ExpenseForm({
                           : "border-[#E5E5E5] focus:border-[#B9FF66] focus:ring-2 focus:ring-[#B9FF66]/20"
                         }`}
                     />
-                    {errors[`member_addr_${i}`] && (
+                    {/* Inline duplicate check — shown while user types, before submit */}
+                    {(() => {
+                      const addr = member.walletAddress?.trim();
+                      if (!addr || !isValidStellarAddress(addr)) return null;
+                      const dupIndex = members.findIndex(
+                        (m2, j) => j !== i && m2.walletAddress?.trim() === addr
+                      );
+                      if (dupIndex === -1) return null;
+                      return (
+                        <p className="text-xs text-red-500">
+                          Same wallet as {members[dupIndex].name.trim() || `Person ${dupIndex + 1}`} — each member needs a unique address.
+                        </p>
+                      );
+                    })()
+                    }
+                    {errors[`member_addr_${i}`] ? (
                       <p className="text-xs text-red-500">{errors[`member_addr_${i}`]}</p>
+                    ) : (
+                      <p className="text-[10px] text-[#AAA]">Stellar wallet address — needed to send XLM payment</p>
                     )}
                   </div>
 
@@ -348,14 +392,24 @@ export function ExpenseForm({
             className="absolute right-3 top-1/2 -translate-y-1/2 text-[#AAA] pointer-events-none"
           />
         </div>
+        <p className="text-[10px] text-[#AAA]">
+          All members are included in the split. Choose who paid upfront.
+        </p>
       </div>
 
-      {/* Live split preview */}
+      {/* Live split preview — shows as soon as amount + 2 named members are filled */}
       {shares.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-[#444] uppercase tracking-wide mb-2">
-            Split preview
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-[#444] uppercase tracking-wide">
+              Split preview
+            </p>
+            {namedMembers.some((m) => !m.walletAddress?.trim()) && (
+              <p className="text-[10px] text-amber-500 font-medium">
+                Fill wallet addresses to enable payments
+              </p>
+            )}
+          </div>
           <SplitCalculator
             shares={shares}
             payerName={payerName}
