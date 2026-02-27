@@ -11,6 +11,10 @@ interface TripFormProps {
   onSubmit: (data: TripFormData) => void;
   onCancel: () => void;
   initialData?: Partial<TripFormData>;
+  /** Prefill the first member's wallet address from connected wallet */
+  currentUserPublicKey?: string | null;
+  /** Prefill the first member's name from authenticated user */
+  currentUserName?: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,14 +25,23 @@ function createMember(name = ""): Member {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function TripForm({ onSubmit, onCancel, initialData }: TripFormProps) {
+export function TripForm({ onSubmit, onCancel, initialData, currentUserPublicKey, currentUserName }: TripFormProps) {
   const [name, setName] = useState(initialData?.name ?? "");
   const [description, setDescription] = useState(initialData?.description ?? "");
-  const [members, setMembers] = useState<Member[]>(
-    initialData?.members && initialData.members.length >= 2
-      ? initialData.members
-      : [createMember(), createMember()]
-  );
+  const [members, setMembers] = useState<Member[]>(() => {
+    if (initialData?.members && initialData.members.length >= 2) {
+      return initialData.members;
+    }
+    // Pre-fill first member with current user info if available
+    return [
+      {
+        id: crypto.randomUUID(),
+        name: currentUserName ?? "",
+        walletAddress: currentUserPublicKey ?? "",
+      },
+      createMember(),
+    ];
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // ── Member mutations ───────────────────────────────────────────────────────
@@ -53,6 +66,13 @@ export function TripForm({ onSubmit, onCancel, initialData }: TripFormProps) {
     if (!name.trim()) errs.name = "Trip name is required";
     const namedMembers = members.filter((m) => m.name.trim());
     if (namedMembers.length < 2) errs.members = "Add at least 2 members";
+    members.forEach((m, i) => {
+      if (!m.name.trim()) return;
+      if (!m.walletAddress?.trim())
+        errs[`member_addr_${i}`] = "Stellar address is required.";
+      else if (!/^G[A-Z2-7]{55}$/.test(m.walletAddress.trim()))
+        errs[`member_addr_${i}`] = "Invalid Stellar address (must start with G, 56 chars).";
+    });
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -68,7 +88,7 @@ export function TripForm({ onSubmit, onCancel, initialData }: TripFormProps) {
         .map((m) => ({
           ...m,
           name: m.name.trim(),
-          walletAddress: m.walletAddress?.trim() || undefined,
+          walletAddress: m.walletAddress?.trim(),
         })),
     });
   };
@@ -87,8 +107,8 @@ export function TripForm({ onSubmit, onCancel, initialData }: TripFormProps) {
 
       {/* Description */}
       <Input
-        label="Description (optional)"
-        placeholder="A short note about this trip"
+        label="Description"
+        placeholder="Add a short note about this trip"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
@@ -123,13 +143,19 @@ export function TripForm({ onSubmit, onCancel, initialData }: TripFormProps) {
                   onChange={(e) => updateMember(member.id, "name", e.target.value)}
                   required={i < 2}
                 />
-                <Input
-                  placeholder="G… Stellar address (optional)"
-                  value={member.walletAddress ?? ""}
-                  onChange={(e) =>
-                    updateMember(member.id, "walletAddress", e.target.value)
-                  }
-                />
+                <div className="flex flex-col gap-0.5">
+                  <Input
+                    placeholder="G… Stellar address *"
+                    value={member.walletAddress ?? ""}
+                    onChange={(e) =>
+                      updateMember(member.id, "walletAddress", e.target.value)
+                    }
+                    error={errors[`member_addr_${i}`]}
+                  />
+                  {!errors[`member_addr_${i}`] && (
+                    <p className="text-[10px] text-[#AAA] px-1">Required — used to send XLM payment</p>
+                  )}
+                </div>
               </div>
               <button
                 type="button"

@@ -11,6 +11,7 @@ import { buildPaymentTransaction } from "@/lib/stellar/buildTransaction";
 import { submitSignedTransaction } from "@/lib/stellar/submitTransaction";
 import { signXDR } from "@/lib/freighter";
 import { useWallet } from "@/hooks/useWallet";
+import { useExpense } from "@/hooks/useExpense";
 import { useToast } from "@/components/ui/Toast";
 import { NETWORK_PASSPHRASE } from "@/lib/utils/constants";
 import { PayButton } from "@/components/payment/PayButton";
@@ -56,12 +57,15 @@ function NetPaymentRow({
   payment,
   index,
   tripName,
+  expenses,
 }: {
   payment: NetPayment;
   index: number;
   tripName: string;
+  expenses: Expense[];
 }) {
   const { publicKey } = useWallet();
+  const { markSharePaid } = useExpense();
   const { success: toastSuccess, error: toastError, info: toastInfo } =
     useToast();
   const [rowState, setRowState] = useState<RowState>({ status: "idle" });
@@ -86,6 +90,24 @@ function NetPaymentRow({
       toastInfo("Waiting for Freighter…", "Confirm the settlement payment.");
       const signedXDR = await signXDR(xdr, NETWORK_PASSPHRASE);
       const { hash } = await submitSignedTransaction(signedXDR);
+
+      // Mark every underlying unpaid share that contributed to this net payment.
+      // A net payment from A to B covers all unpaid shares where A owes B
+      // across every expense in the trip.
+      for (const expense of expenses) {
+        const payer = expense.members.find((m) => m.id === expense.paidByMemberId);
+        if (!payer || payer.name !== payment.to) continue;
+        for (const share of expense.shares) {
+          if (share.name === payment.from && !share.paid) {
+            try {
+              await markSharePaid(expense.id, share.memberId, hash);
+            } catch {
+              // Don't fail the payment display — DB sync failure is non-fatal here
+            }
+          }
+        }
+      }
+
       setRowState({ status: "done", txHash: hash });
       toastSuccess("Settlement sent!", `Paid ${parseFloat(payment.amount).toFixed(4)} XLM to ${payment.to}`);
     } catch (err: unknown) {
@@ -190,6 +212,7 @@ export function SettlementSummary({ trip, expenses }: SettlementSummaryProps) {
           payment={p}
           index={i}
           tripName={trip.name}
+          expenses={expenses}
         />
       ))}
     </div>
