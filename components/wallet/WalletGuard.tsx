@@ -21,18 +21,21 @@ export function WalletGuard({
   children,
   redirectTo = "/",
 }: WalletGuardProps) {
-  const { isConnected, isConnecting } = useWallet();
+  const { isConnected, isConnecting, isHydrated } = useWallet();
   const router = useRouter();
 
   useEffect(() => {
-    // Wait for the initial auto-reconnect attempt before deciding to redirect
-    if (!isConnecting && !isConnected) {
+    // Wait until the localStorage auto-reconnect check has fully resolved
+    // before deciding to redirect. Without this, a page refresh would always
+    // redirect to home because isConnected starts as false while the async
+    // Freighter check is pending.
+    if (isHydrated && !isConnecting && !isConnected) {
       router.replace(redirectTo);
     }
-  }, [isConnected, isConnecting, redirectTo, router]);
+  }, [isConnected, isConnecting, isHydrated, redirectTo, router]);
 
-  // Show a centred spinner while connecting / hydrating
-  if (isConnecting || !isConnected) {
+  // Show spinner while hydrating (restoring from localStorage) or connecting
+  if (!isHydrated || isConnecting || !isConnected) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F6F6F6]">
         <div className="flex flex-col items-center gap-4">

@@ -27,6 +27,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetwork]               = useState<string | null>(null);
   const [isConnecting, setIsConnecting]     = useState(false);
   const [isLoadingBalance, setLoadingBal]   = useState(false);
+  const [isHydrated, setIsHydrated]         = useState(false);
   const [error, setError]                   = useState<string | null>(null);
 
   const isConnected = !!publicKey;
@@ -35,16 +36,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // ── Internal helpers ────────────────────────────────────────────────────────
 
-  const fetchBalance = useCallback(async (pk: string) => {
-    setLoadingBal(true);
+  const fetchBalance = useCallback(async (pk: string, silent = false) => {
+    if (!silent) setLoadingBal(true);
     try {
       const bal = await getXLMBalance(pk);
       setBalance(bal);
     } catch {
-      // Non-fatal — balance display just won't show
-      setBalance(null);
+      // Non-fatal — keep the last known balance so we never display a misleading "0"
+      // caused by a transient Horizon error or rate-limit.
     } finally {
-      setLoadingBal(false);
+      if (!silent) setLoadingBal(false);
     }
   }, []);
 
@@ -67,20 +68,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ? localStorage.getItem(LS_PUBLIC_KEY)
       : null;
 
-    if (!savedKey) return;
+    if (!savedKey) {
+      // No saved key — nothing to restore, mark hydration done immediately
+      setIsHydrated(true);
+      return;
+    }
 
     // Verify Freighter still has the same key before auto-restoring
     isFreighterInstalled().then((installed) => {
       if (!installed) {
         localStorage.removeItem(LS_PUBLIC_KEY);
-        return;
+      } else {
+        // Restore silently — do not re-prompt the user
+        setPublicKey(savedKey);
+        fetchBalance(savedKey);
+        hydrateNetwork();
       }
-      // Restore silently — do not re-prompt the user
-      setPublicKey(savedKey);
-      fetchBalance(savedKey);
-      hydrateNetwork();
+      // Either way, hydration check is done — allow WalletGuard to render
+      setIsHydrated(true);
     });
   }, [fetchBalance, hydrateNetwork]);
+
+  // ── Live balance polling ────────────────────────────────────────────────────
+  // Polls every 15 s when a wallet is connected so both the payer (recipient)
+  // and members (senders) always see an up-to-date balance without manual refresh.
+  // Also refreshes whenever the browser tab regains focus.
+  useEffect(() => {
+    if (!publicKey) return;
+
+    // Poll every 15 seconds — silent so balance number stays visible (no spinner flicker)
+    const interval = setInterval(() => {
+      fetchBalance(publicKey, true);
+    }, 15_000);
+
+    // Also refresh silently when user returns to this tab
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchBalance(publicKey, true);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [publicKey, fetchBalance]);
 
   // ── connect ─────────────────────────────────────────────────────────────────
 
@@ -145,6 +178,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     network,
     isConnected,
     isConnecting,
+    isHydrated,
     isLoadingBalance,
     error,
     connect,
