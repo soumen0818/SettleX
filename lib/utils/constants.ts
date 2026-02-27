@@ -28,6 +28,7 @@ export const MEMO_MAX_BYTES = 28;
 export const LS_PUBLIC_KEY = "settlex:publicKey";
 export const LS_EXPENSES   = "settlex:expenses";
 export const LS_TRIPS      = "settlex:trips";
+export const LS_USER       = "settlex:user";
 
 // App
 export const APP_NAME    = process.env.NEXT_PUBLIC_APP_NAME    ?? "SettleX";
