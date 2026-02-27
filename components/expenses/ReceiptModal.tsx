@@ -27,7 +27,7 @@ export function ReceiptModal({
   recipientName,
   ledger,
 }: ReceiptModalProps) {
-  const explorerUrl = `${STELLAR_EXPLORER}/transactions/${txHash}`;
+  const explorerUrl = `${STELLAR_EXPLORER}/tx/${txHash}`;
   const displayAmount = parseFloat(amount).toFixed(4);
 
   return (

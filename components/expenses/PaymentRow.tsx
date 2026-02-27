@@ -21,6 +21,11 @@ interface PaymentRowProps {
   onPay?: (share: SplitShare) => void;
   /** When true, show spinner on Pay button (payment in-flight for this share). */
   isPaying?: boolean;
+  /** Connected wallet — Pay button is only shown when this matches share.walletAddress.
+   *  If undefined/null, falls back to the old behaviour (show for all). */
+  connectedWalletAddress?: string | null;
+  /** Payer's wallet address — guard against showing Pay for the payer row. */
+  payerWalletAddress?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -31,12 +36,27 @@ export function PaymentRow({
   expenseTitle = "Expense",
   onPay,
   isPaying = false,
+  connectedWalletAddress,
+  payerWalletAddress,
 }: PaymentRowProps) {
   const [showReceipt, setShowReceipt] = useState(false);
   const explorerUrl = share.walletAddress
     ? `${STELLAR_EXPLORER}/account/${share.walletAddress}`
     : null;
   const memo = `SettleX|${expenseTitle}|${share.name}`.slice(0, 28);
+
+  // The payer NEVER owes anything — guard even if wallets accidentally overlap.
+  const isPayerRow =
+    !!payerWalletAddress &&
+    !!share.walletAddress &&
+    share.walletAddress === payerWalletAddress;
+
+  // Show Pay button only when the connected wallet matches this share’s wallet
+  // AND this row does not belong to the payer.
+  const isMyRow =
+    !isPayerRow &&
+    (!connectedWalletAddress ||
+      (!!share.walletAddress && share.walletAddress === connectedWalletAddress));
 
   return (
     <>
@@ -105,7 +125,7 @@ export function PaymentRow({
               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#B9FF66]/30 text-[#2D6600] rounded-full">
                 ✓ Paid
               </span>
-            ) : (
+            ) : isMyRow ? (
               <PayButton
                 amount={share.amount}
                 recipientName={share.name}
@@ -114,6 +134,10 @@ export function PaymentRow({
                 disabled={!share.walletAddress || !onPay}
                 size="sm"
               />
+            ) : (
+              <span className="inline-flex items-center text-[10px] font-medium text-[#AAA] px-2 py-0.5 bg-[#F5F5F5] rounded-full">
+                Awaiting
+              </span>
             )}
           </div>
         </div>
