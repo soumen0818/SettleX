@@ -8,13 +8,14 @@ import {
   Asset,
   Memo,
   Networks,
+  Account,
 } from "@stellar/stellar-sdk";
-import { server } from "./client";
 import {
   NETWORK_PASSPHRASE,
   TX_BASE_FEE,
   MEMO_MAX_BYTES,
   MEMO_PREFIX,
+  HORIZON_URL,
 } from "@/lib/utils/constants";
 
 export interface BuildTxParams {
@@ -52,8 +53,20 @@ export async function buildPaymentTransaction({
   amount,
   memoText,
 }: BuildTxParams): Promise<BuildTxResult> {
-  // Load source account for sequence number
-  const account = await server.loadAccount(sourcePublicKey);
+  // Load source account for sequence number using a direct no-cache fetch
+  // so we always get the latest sequence number and never get a stale one
+  // from the SDK's internal HTTP cache (which can cause tx_bad_seq errors).
+  const acctRes = await fetch(
+    `${HORIZON_URL}/accounts/${sourcePublicKey}?_ts=${Date.now()}`,
+    { cache: "no-store", headers: { "Cache-Control": "no-cache" } }
+  );
+  if (!acctRes.ok) {
+    throw new Error(
+      `Failed to load account from Horizon (${acctRes.status}). Check your Stellar address and network.`
+    );
+  }
+  const acctData = await acctRes.json() as { sequence: string };
+  const account = new Account(sourcePublicKey, acctData.sequence);
 
   // Build memo — enforce Stellar's 28-byte limit
   const rawMemo = memoText
