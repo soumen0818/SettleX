@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/context/WalletContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ExpenseProvider } from "@/context/ExpenseContext";
 import { TripProvider } from "@/context/TripContext";
@@ -83,11 +84,13 @@ export default function RootLayout({
       <body className="bg-[#F6F6F6] text-[#0F0F14] font-sans antialiased">
         <ToastProvider>
           <WalletProvider>
-            <ExpenseProvider>
-              <TripProvider>
-                {children}
-              </TripProvider>
-            </ExpenseProvider>
+            <AuthProvider>
+              <ExpenseProvider>
+                <TripProvider>
+                  {children}
+                </TripProvider>
+              </ExpenseProvider>
+            </AuthProvider>
           </WalletProvider>
         </ToastProvider>
       </body>
