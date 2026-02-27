@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { useAuth } from "@/context/AuthContext";
 
 /* ── animation variants ── */
 const fadeUp = {
@@ -124,6 +125,8 @@ const trustLogos = [
 ];
 
 export default function Hero() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <section className="relative min-h-screen overflow-hidden bg-[#F6F6F6]">
       {/* Background radial + grid */}
@@ -197,8 +200,8 @@ export default function Hero() {
               className="flex flex-col sm:flex-row gap-3 mb-10"
             >
               <Button variant="primary" size="lg" asChild>
-                <Link href="/dashboard">
-                  Launch App
+                <Link href={isAuthenticated ? "/dashboard" : "/auth"}>
+                  {isAuthenticated ? "Go to Dashboard" : "Get Started"}
                   <ArrowRight size={18} />
                 </Link>
               </Button>
