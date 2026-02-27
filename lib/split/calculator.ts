@@ -26,18 +26,24 @@ export function calculateEqualSplit(
 ): SplitShare[] {
   if (members.length === 0) return [];
 
+  // Only the non-payers owe anything
+  const nonPayers = members.filter((m) => m.id !== paidByMemberId);
+  if (nonPayers.length === 0) return [];
+
+  // Each person's fair share (including the payer who already paid)
   const perHead = totalXLM / members.length;
   const shares: SplitShare[] = [];
 
-  members.forEach((m, i) => {
-    if (m.id === paidByMemberId) return; // payer owes nothing
+  nonPayers.forEach((m, i) => {
+    const isLast = i === nonPayers.length - 1;
+    const accumulated = shares.reduce((s, x) => s + parseFloat(x.amount), 0);
 
-    // Last non-payer absorbs rounding dust
-    const isLast = i === members.length - 1 ||
-      members.slice(i + 1).every((x) => x.id === paidByMemberId);
-
+    // Last non-payer absorbs any floating-point dust.
+    // Total non-payers must pay = perHead × nonPayers.length (not totalXLM,
+    // because the payer keeps their own share). This fixes the 2-member bug
+    // where the single non-payer was incorrectly assigned the full totalXLM.
     const amount = isLast
-      ? (totalXLM - shares.reduce((s, x) => s + parseFloat(x.amount), 0))
+      ? perHead * nonPayers.length - accumulated
       : perHead;
 
     shares.push({

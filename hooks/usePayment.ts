@@ -27,12 +27,14 @@ interface UsePaymentOpts {
 interface PayShareParams {
   share: SplitShare;
   expenseTitle: string;
+  /** The payer's Stellar wallet — this is who RECEIVES the XLM. */
+  payerWalletAddress: string;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function usePayment({ expenseId }: UsePaymentOpts) {
-  const { publicKey } = useWallet();
+  const { publicKey, refreshBalance } = useWallet();
   const { markSharePaid } = useExpense();
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast();
 
@@ -48,7 +50,7 @@ export function usePayment({ expenseId }: UsePaymentOpts) {
    *   4. On success: mark share as paid in ExpenseContext + show toast
    */
   const payShare = useCallback(
-    async ({ share, expenseTitle }: PayShareParams) => {
+    async ({ share, expenseTitle, payerWalletAddress }: PayShareParams) => {
       if (!publicKey) {
         toastError("Wallet not connected", "Please connect your Freighter wallet first.");
         return;
@@ -62,13 +64,24 @@ export function usePayment({ expenseId }: UsePaymentOpts) {
         return;
       }
 
+      if (!payerWalletAddress) {
+        toastError(
+          "Payer has no wallet",
+          "The expense creator hasn't added their Stellar address — can't send XLM to them."
+        );
+        return;
+      }
+
       try {
         // Step 1: Build transaction
         setPaymentState({ status: "building" });
         const memoText = `${expenseTitle}|${share.name}`.slice(0, 24); // safe for 28-byte limit with prefix
         const { xdr } = await buildPaymentTransaction({
           sourcePublicKey: publicKey,
-          destinationPublicKey: share.walletAddress,
+          // destinationPublicKey MUST be the payer's wallet — they are the ones
+          // who fronted the money and need to receive reimbursement.
+          // share.walletAddress is the DEBTOR's wallet (the sender), NOT the recipient.
+          destinationPublicKey: payerWalletAddress,
           amount: share.amount,
           memoText,
         });
@@ -82,13 +95,20 @@ export function usePayment({ expenseId }: UsePaymentOpts) {
         setPaymentState({ status: "submitting" });
         const result = await submitSignedTransaction(signedXDR);
 
-        // Step 4: Update local state
-        markSharePaid(expenseId, share.memberId, result.hash);
+        // Step 4: Update share state — await so we know it persisted
+        await markSharePaid(expenseId, share.memberId, result.hash);
         setPaymentState({ status: "success", hash: result.hash, ledger: result.ledger });
         toastSuccess(
           `Paid ${parseFloat(share.amount).toFixed(4)} XLM to ${share.name}`,
           `TX: ${result.hash.slice(0, 12)}…`
         );
+
+        // Refresh the sender's balance after a short delay to allow
+        // Horizon to settle the ledger change before we query it.
+        // Testnet closes a ledger every ~5 s; 3 s is usually enough.
+        // A second refresh at 8 s catches any slow ledger closes.
+        setTimeout(() => { refreshBalance(); }, 3000);
+        setTimeout(() => { refreshBalance(); }, 8000);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Payment failed. Please try again.";
@@ -107,7 +127,7 @@ export function usePayment({ expenseId }: UsePaymentOpts) {
         toastError("Payment failed", displayMsg);
       }
     },
-    [publicKey, expenseId, markSharePaid, toastSuccess, toastError, toastInfo]
+    [publicKey, expenseId, markSharePaid, refreshBalance, toastSuccess, toastError, toastInfo]
   );
 
   return {
