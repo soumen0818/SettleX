@@ -6,11 +6,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Plus, ArrowLeft, Map, Inbox } from "lucide-react";
 import { useTrip } from "@/hooks/useTrip";
 import { useExpense } from "@/hooks/useExpense";
+import { useWallet } from "@/hooks/useWallet";
+import { useAuth } from "@/context/AuthContext";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
-import { WalletGuard } from "@/components/wallet/WalletGuard";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import { Modal } from "@/components/ui/Modal";
 import { TripCard } from "@/components/trips/TripCard";
 import { TripForm } from "@/components/trips/TripForm";
+import { useToast } from "@/components/ui/Toast";
 import type { TripFormData, Trip } from "@/types/trip";
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
@@ -46,9 +49,13 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 export default function TripsPage() {
   const { trips, addTrip, deleteTrip } = useTrip();
   const { expenses } = useExpense();
+  const { publicKey } = useWallet();
+  const { user } = useAuth();
+  const { success: toastSuccess, error: toastError } = useToast();
   const [showForm, setShowForm] = useState(false);
+  const [creating, setCreating] = useState(false);
 
-  const handleCreate = (data: TripFormData) => {
+  const handleCreate = async (data: TripFormData) => {
     const trip: Trip = {
       id: crypto.randomUUID(),
       name: data.name,
@@ -58,12 +65,27 @@ export default function TripsPage() {
       createdAt: new Date().toISOString(),
       settled: false,
     };
-    addTrip(trip);
-    setShowForm(false);
+    setCreating(true);
+    try {
+      await addTrip(trip);
+      toastSuccess("Trip created!", `"${trip.name}" is ready.`);
+      setShowForm(false);
+    } catch (err: any) {
+      const msg: string = err?.message || "";
+      if (msg.includes("fetch") || msg.includes("network") || msg.includes("Network")) {
+        toastError("No connection", "Cannot reach server. Check your connection (WARP on?).");
+      } else if (msg.includes("policy") || msg.includes("permission")) {
+        toastError("Save failed", "Database permission error. Please try again.");
+      } else {
+        toastError("Save failed", msg || "Could not save trip. Please try again.");
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
-    <WalletGuard>
+    <AuthGuard>
       <div className="min-h-screen bg-[#F6F6F6]">
         {/* Nav */}
         <nav className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-[#E5E5E5] bg-white/90 backdrop-blur-xl">
@@ -147,10 +169,12 @@ export default function TripsPage() {
         size="lg"
       >
         <TripForm
+          currentUserPublicKey={publicKey}
+          currentUserName={user?.displayName}
           onSubmit={handleCreate}
           onCancel={() => setShowForm(false)}
         />
       </Modal>
-    </WalletGuard>
+    </AuthGuard>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,19 +12,151 @@ import {
   Users,
   CheckCheck,
   ExternalLink,
+  ChevronRight,
+  Inbox,
+  CheckCircle2,
 } from "lucide-react";
 import { useTrip } from "@/hooks/useTrip";
 import { useExpense } from "@/hooks/useExpense";
+import { usePayment } from "@/hooks/usePayment";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
-import { WalletGuard } from "@/components/wallet/WalletGuard";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import { Modal } from "@/components/ui/Modal";
 import { ExpenseForm } from "@/components/expenses/ExpenseForm";
-import { ExpenseList } from "@/components/trips/ExpenseList";
+import { SplitCalculator } from "@/components/expenses/SplitCalculator";
 import { SettlementSummary } from "@/components/trips/SettlementSummary";
+import { PaymentStatus } from "@/components/payment/PaymentStatus";
 import { useWallet } from "@/hooks/useWallet";
-import type { Member } from "@/types/expense";
+import { useAuth } from "@/context/AuthContext";
+import type { Expense, Member, SplitShare } from "@/types/expense";
 
 type Tab = "expenses" | "settle";
+
+// ─── Expandable Expense Card (with full payment capability) ───────────────────
+
+function TripExpenseCard({
+  expense,
+  currentUserPublicKey,
+}: {
+  expense: Expense;
+  currentUserPublicKey?: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [payingShareId, setPayingShareId] = useState<string | null>(null);
+  const { payShare, paymentState, reset } = usePayment({ expenseId: expense.id });
+
+  const paidCount = expense.shares.filter((s) => s.paid).length;
+  const total = parseFloat(expense.totalAmount);
+  const payer = expense.members.find((m) => m.id === expense.paidByMemberId);
+  const createdAt = new Date(expense.createdAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const handlePay = async (share: SplitShare) => {
+    setPayingShareId(share.memberId);
+    await payShare({
+      share,
+      expenseTitle: expense.title,
+      payerWalletAddress: payer?.walletAddress ?? "",
+    });
+    setPayingShareId(null);
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      className="bg-white rounded-2xl border border-[#E5E5E5] overflow-hidden hover:border-[#D0D0D0] transition-all"
+    >
+      {/* Header row — click to expand */}
+      <button
+        className="w-full flex items-center justify-between gap-3 p-4 text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-[#0F0F14] flex items-center justify-center shrink-0">
+            <ReceiptText size={15} className="text-[#B9FF66]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-[#0F0F14] truncate">{expense.title}</p>
+            <p className="text-xs text-[#AAA]">
+              {total.toFixed(4)} XLM &middot; {expense.members.length} members &middot; {createdAt}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {expense.settled ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#B9FF66]/30 text-[#2D6600] rounded-full">
+              Settled
+            </span>
+          ) : (
+            <span className="text-xs text-[#888]">
+              {paidCount}/{expense.shares.length} paid
+            </span>
+          )}
+          <ChevronRight
+            size={14}
+            className={`text-[#CCC] transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+          />
+        </div>
+      </button>
+
+      {/* Progress bar */}
+      {expense.shares.length > 0 && (
+        <div className="h-0.5 w-full bg-[#F0F0F0]">
+          <div
+            className="h-full bg-[#B9FF66] transition-all duration-500"
+            style={{ width: `${(paidCount / expense.shares.length) * 100}%` }}
+          />
+        </div>
+      )}
+
+      {/* Expanded — SplitCalculator with Pay buttons */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pt-3 pb-4 border-t border-[#F5F5F5]">
+              {expense.description && (
+                <p className="text-xs text-[#888] mb-3 leading-relaxed">{expense.description}</p>
+              )}
+              <SplitCalculator
+                shares={expense.shares}
+                payerName={payer?.name ?? "Payer"}
+                payerWalletAddress={payer?.walletAddress}
+                totalAmount={expense.totalAmount}
+                expenseTitle={expense.title}
+                onPay={handlePay}
+                payingShareId={payingShareId ?? undefined}
+                connectedWalletAddress={currentUserPublicKey}
+              />
+              {paymentState.status !== "idle" && (
+                <div className="mt-3">
+                  <PaymentStatus state={paymentState} onReset={reset} />
+                </div>
+              )}
+              <div className="mt-3 pt-3 border-t border-[#F5F5F5]">
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-[#CCC]">
+                  Split: {expense.splitMode}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -33,16 +165,28 @@ export default function TripDetailPage() {
   const { getTrip, settleTrip, addExpenseToTrip } = useTrip();
   const { expenses, addExpense } = useExpense();
   const { publicKey } = useWallet();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<Tab>("expenses");
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
   const trip = getTrip(params.id);
 
+  // ── Auto-settle trip when ALL linked expenses are paid ─────────────────────
+  // Runs whenever any expense changes (e.g. a share gets marked paid).
+  // Once every expense in this trip is settled, settleTrip is called automatically.
+  useEffect(() => {
+    if (!trip || trip.settled) return;
+    const linked = expenses.filter((e) => trip.expenseIds.includes(e.id));
+    if (linked.length > 0 && linked.every((e) => e.settled)) {
+      settleTrip(trip.id);
+    }
+  }, [expenses, trip, settleTrip]);
+
   // Trip not found
   if (!trip) {
     return (
-      <WalletGuard>
+      <AuthGuard>
         <div className="min-h-screen bg-[#F6F6F6] flex flex-col items-center justify-center gap-4">
           <p className="text-[#888]">Trip not found.</p>
           <Link
@@ -52,7 +196,7 @@ export default function TripDetailPage() {
             Back to Trips
           </Link>
         </div>
-      </WalletGuard>
+      </AuthGuard>
     );
   }
 
@@ -64,8 +208,15 @@ export default function TripDetailPage() {
   const paidShares = tripExpenses.flatMap((e) => e.shares).filter((s) => s.paid).length;
   const totalShares = tripExpenses.flatMap((e) => e.shares).length;
 
+  // Per-member settlement: find all shares belonging to the connected wallet
+  const myShares = tripExpenses.flatMap((e) =>
+    e.shares.filter((s) => s.walletAddress === publicKey)
+  );
+  const myPaidShares = myShares.filter((s) => s.paid);
+  const myFullySettled = myShares.length > 0 && myShares.every((s) => s.paid);
+
   return (
-    <WalletGuard>
+    <AuthGuard>
       <div className="min-h-screen bg-[#F6F6F6]">
         {/* Nav */}
         <nav className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-[#E5E5E5] bg-white/90 backdrop-blur-xl">
@@ -124,15 +275,7 @@ export default function TripDetailPage() {
                 </div>
               </div>
 
-              {!trip.settled && (
-                <button
-                  onClick={() => settleTrip(trip.id)}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#B9FF66] text-[#0F0F14] text-xs font-bold hover:bg-[#a8ec55] transition-all"
-                >
-                  <CheckCheck size={12} />
-                  Mark Settled
-                </button>
-              )}
+
             </div>
 
             {/* Members row */}
@@ -167,6 +310,44 @@ export default function TripDetailPage() {
           </div>
 
           {/* Tabs */}
+          {/* Per-member settlement banner — visible to the connected user */}
+          {publicKey && myShares.length > 0 && (
+            <div
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl border mb-4 ${
+                myFullySettled
+                  ? "bg-[#F0FFDB] border-[#B9FF66]/50"
+                  : "bg-white border-[#E5E5E5]"
+              }`}
+            >
+              <CheckCircle2
+                size={18}
+                className={myFullySettled ? "text-[#2D6600] shrink-0" : "text-[#CCC] shrink-0"}
+              />
+              <div className="flex-1 min-w-0">
+                {myFullySettled ? (
+                  <>
+                    <p className="text-sm font-bold text-[#2D6600]">Your part is fully settled!</p>
+                    <p className="text-xs text-[#5a9400]">
+                      You paid all {myShares.length} of your share{myShares.length !== 1 ? "s" : ""} in this trip.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-[#0F0F14]">Your payment progress</p>
+                    <p className="text-xs text-[#888]">
+                      {myPaidShares.length} of {myShares.length} share{myShares.length !== 1 ? "s" : ""} paid
+                    </p>
+                  </>
+                )}
+              </div>
+              {!myFullySettled && (
+                <span className="text-xs font-bold text-[#888] shrink-0">
+                  {myShares.length - myPaidShares.length} remaining
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-1 p-1 bg-[#EBEBEB] rounded-xl mb-5">
             {(["expenses", "settle"] as Tab[]).map((tab) => (
               <button
@@ -215,12 +396,24 @@ export default function TripDetailPage() {
                     Add Expense
                   </button>
                 </div>
-                <ExpenseList
-                  expenses={tripExpenses}
-                  onSelect={() => {
-                    // Future: navigate or expand
-                  }}
-                />
+                {tripExpenses.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 px-4 text-center rounded-xl border border-dashed border-[#E5E5E5]">
+                    <ReceiptText size={20} className="text-[#CCC] mb-2" />
+                    <p className="text-sm text-[#AAA]">No expenses in this trip yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <AnimatePresence mode="popLayout">
+                      {tripExpenses.map((expense: Expense) => (
+                        <TripExpenseCard
+                          key={expense.id}
+                          expense={expense}
+                          currentUserPublicKey={publicKey}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
               </motion.div>
             ) : (
               <motion.div
@@ -247,6 +440,7 @@ export default function TripDetailPage() {
       >
         <ExpenseForm
           currentUserPublicKey={publicKey}
+          currentUserName={user?.displayName}
           defaultMembers={trip.members}
           onSuccess={(newExpenseId?: string) => {
             if (newExpenseId) addExpenseToTrip(trip.id, newExpenseId);
@@ -255,6 +449,6 @@ export default function TripDetailPage() {
           onCancel={() => setShowExpenseForm(false)}
         />
       </Modal>
-    </WalletGuard>
+    </AuthGuard>
   );
 }
