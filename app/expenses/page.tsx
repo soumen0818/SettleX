@@ -12,10 +12,11 @@ import {
   Inbox,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
+import { useAuth } from "@/context/AuthContext";
 import { useExpense } from "@/hooks/useExpense";
 import { usePayment } from "@/hooks/usePayment";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
-import { WalletGuard } from "@/components/wallet/WalletGuard";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import { Modal } from "@/components/ui/Modal";
 import { ExpenseForm } from "@/components/expenses/ExpenseForm";
 import { SplitCalculator } from "@/components/expenses/SplitCalculator";
@@ -27,17 +28,31 @@ import type { Expense, SplitShare } from "@/types/expense";
 function ExpenseCard({
   expense,
   onDelete,
+  currentUserPublicKey,
 }: {
   expense: Expense;
   onDelete: (id: string) => void;
+  currentUserPublicKey?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [payingShareId, setPayingShareId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Only the payer (the person who created/paid the expense) can delete it.
+  const payerMember = expense.members.find((m) => m.id === expense.paidByMemberId);
+  const isOwner =
+    !!currentUserPublicKey &&
+    !!payerMember?.walletAddress &&
+    payerMember.walletAddress === currentUserPublicKey;
   const { payShare, paymentState, reset } = usePayment({ expenseId: expense.id });
 
   const handlePay = async (share: SplitShare) => {
     setPayingShareId(share.memberId);
-    await payShare({ share, expenseTitle: expense.title });
+    await payShare({
+      share,
+      expenseTitle: expense.title,
+      payerWalletAddress: payer?.walletAddress ?? "",
+    });
     setPayingShareId(null);
   };
   const paidCount = expense.shares.filter((s) => s.paid).length;
@@ -129,10 +144,12 @@ function ExpenseCard({
               <SplitCalculator
                 shares={expense.shares}
                 payerName={payer?.name ?? "Payer"}
+                payerWalletAddress={payer?.walletAddress}
                 totalAmount={expense.totalAmount}
                 expenseTitle={expense.title}
                 onPay={handlePay}
                 payingShareId={payingShareId ?? undefined}
+                connectedWalletAddress={currentUserPublicKey}
               />
 
               {paymentState.status !== "idle" && (
@@ -141,20 +158,49 @@ function ExpenseCard({
                 </div>
               )}
 
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#F5F5F5]">
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-[#CCC]">
-                  Split: {expense.splitMode}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(expense.id);
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#CCC] hover:text-red-500 transition-colors"
-                >
-                  <Trash2 size={12} />
-                  Delete
-                </button>
+              <div className="mt-3 pt-3 border-t border-[#F5F5F5]">
+                {confirmDelete ? (
+                  /* ── Confirmation strip ── */
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
+                    <p className="text-xs text-red-600 font-medium">
+                      Delete &ldquo;{expense.title}&rdquo;? This cannot be undone.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+                        className="text-xs font-semibold text-[#888] hover:text-[#0F0F14] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDelete(expense.id); }}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={11} />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-[#CCC]">
+                      Split: {expense.splitMode}
+                    </span>
+                    {isOwner ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+                        className="flex items-center gap-1.5 text-xs font-medium text-[#CCC] hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={12} />
+                        Delete
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-[#CCC] italic">
+                        Only the payer can delete
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -197,11 +243,12 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 
 export default function ExpensesPage() {
   const { publicKey } = useWallet();
+  const { user } = useAuth();
   const { expenses, deleteExpense } = useExpense();
   const [showForm, setShowForm] = useState(false);
 
   return (
-    <WalletGuard>
+    <AuthGuard>
       <div className="min-h-screen bg-[#F6F6F6]">
         {/* Nav */}
         <nav className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-[#E5E5E5] bg-white/90 backdrop-blur-xl">
@@ -250,6 +297,7 @@ export default function ExpensesPage() {
                     key={expense.id}
                     expense={expense}
                     onDelete={deleteExpense}
+                    currentUserPublicKey={publicKey}
                   />
                 ))}
               </AnimatePresence>
@@ -270,10 +318,11 @@ export default function ExpensesPage() {
       >
         <ExpenseForm
           currentUserPublicKey={publicKey}
+          currentUserName={user?.displayName}
           onSuccess={() => setShowForm(false)}
           onCancel={() => setShowForm(false)}
         />
       </Modal>
-    </WalletGuard>
+    </AuthGuard>
   );
 }

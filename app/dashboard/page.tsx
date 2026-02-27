@@ -19,8 +19,10 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
+import { useAuth } from "@/context/AuthContext";
 import { useExpense } from "@/hooks/useExpense";
 import { useTrip } from "@/hooks/useTrip";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { WalletInfo } from "@/components/wallet/WalletInfo";
 import { Spinner } from "@/components/ui/Spinner";
@@ -172,6 +174,7 @@ function RecentExpenseRow({ expense }: { expense: Expense }) {
 
 function DashboardView() {
   const { publicKey } = useWallet();
+  const { user } = useAuth();
   const { expenses } = useExpense();
   const { trips } = useTrip();
 
@@ -234,7 +237,7 @@ function DashboardView() {
               <h2 className="text-xl sm:text-2xl font-black text-white mb-1">
                 Welcome,{" "}
                 <span className="text-[#B9FF66]">
-                  {publicKey ? formatAddress(publicKey, 5) : "…"}
+                  {user?.displayName || (publicKey ? formatAddress(publicKey, 5) : "…")}
                 </span>
               </h2>
               <p className="text-[#666] text-sm">
@@ -370,5 +373,13 @@ export default function DashboardPage() {
     );
   }
 
-  return isConnected ? <DashboardView /> : <ConnectPrompt />;
+  if (!isConnected) {
+    return <ConnectPrompt />;
+  }
+
+  return (
+    <AuthGuard>
+      <DashboardView />
+    </AuthGuard>
+  );
 }
