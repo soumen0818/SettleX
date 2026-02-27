@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Zap, Shield, Star } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/context/AuthContext";
 
 const perks = [
   { icon: Zap, text: "No account required" },
@@ -13,6 +14,8 @@ const perks = [
 ];
 
 export default function CTASection() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <section className="relative bg-[#F6F6F6] overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
@@ -79,8 +82,8 @@ export default function CTASection() {
             {/* CTA buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
               <Button variant="primary" size="xl" asChild>
-                <Link href="/dashboard">
-                  Launch SettleX
+                <Link href={isAuthenticated ? "/dashboard" : "/auth"}>
+                  {isAuthenticated ? "Go to Dashboard" : "Launch SettleX"}
                   <ArrowRight size={20} />
                 </Link>
               </Button>
