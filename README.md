@@ -20,6 +20,11 @@
   <img src="https://img.shields.io/badge/Tests-45%20Passing-brightgreen?style=flat-square" alt="45 Tests Passing" />
 </p>
 
+<p align="center">
+  <a href="https://settle-x-pi.vercel.app/"><strong>Live Demo</strong></a> &nbsp;&bull;&nbsp;
+  <a href="https://youtu.be/gnUaUONmb3I"><strong>Demo Video</strong></a>
+</p>
+
 ---
 
 ## Table of Contents
@@ -55,37 +60,37 @@ Every payment produces a **real, verifiable transaction hash** on the Stellar bl
 
 ## Features
 
-| Feature | Status |
-|---|---|
-| Multi-wallet connect (Freighter, xBull, Lobstr) | Live |
-| Create and split expenses — equal, percentage, custom weight | Live |
-| Pay shares with XLM (Stellar Payment operation) | Live |
-| SEP-0007 QR code generation for mobile wallets | Live |
-| Transaction hash receipt linked to Stellar Explorer | Live |
-| Soroban contract: immutable on-chain payment recording | Live |
-| Real-time event listening from contract (`pmt_rec` events) | Live |
-| Trip mode — group expenses with net-balance settle-up | Live |
-| Live cross-user sync via Supabase Realtime | Live |
-| Net-balance algorithm (minimises transactions needed) | Live |
-| Mobile-responsive UI | Live |
+| Feature                                                      | Status |
+| ------------------------------------------------------------ | ------ |
+| Multi-wallet connect (Freighter, xBull, Lobstr)              | Live   |
+| Create and split expenses — equal, percentage, custom weight | Live   |
+| Pay shares with XLM (Stellar Payment operation)              | Live   |
+| SEP-0007 QR code generation for mobile wallets               | Live   |
+| Transaction hash receipt linked to Stellar Explorer          | Live   |
+| Soroban contract: immutable on-chain payment recording       | Live   |
+| Real-time event listening from contract (`pmt_rec` events)   | Live   |
+| Trip mode — group expenses with net-balance settle-up        | Live   |
+| Live cross-user sync via Supabase Realtime                   | Live   |
+| Net-balance algorithm (minimises transactions needed)        | Live   |
+| Mobile-responsive UI                                         | Live   |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 14 (App Router, TypeScript) |
-| Styling | Tailwind CSS 3.4, Framer Motion |
-| Blockchain SDK | `@stellar/stellar-sdk` v14 |
-| Wallet support | `@stellar/freighter-api` v6, xBull SDK, Lobstr |
-| Smart contract | Soroban (Rust, `soroban-sdk` v21) |
-| Network | Stellar Testnet (Horizon + Soroban RPC) |
-| Database | Supabase (PostgreSQL + Realtime) |
-| QR codes | `qrcode.react`, `qrcode` |
-| Testing | Jest 29 + ts-jest (45 unit tests) |
-| State management | React Context + Supabase + localStorage |
-| UI primitives | Radix UI, Lucide React |
+| Layer            | Technology                                     |
+| ---------------- | ---------------------------------------------- |
+| Framework        | Next.js 14 (App Router, TypeScript)            |
+| Styling          | Tailwind CSS 3.4, Framer Motion                |
+| Blockchain SDK   | `@stellar/stellar-sdk` v14                     |
+| Wallet support   | `@stellar/freighter-api` v6, xBull SDK, Lobstr |
+| Smart contract   | Soroban (Rust, `soroban-sdk` v21)              |
+| Network          | Stellar Testnet (Horizon + Soroban RPC)        |
+| Database         | Supabase (PostgreSQL + Realtime)               |
+| QR codes         | `qrcode.react`, `qrcode`                       |
+| Testing          | Jest 29 + ts-jest (45 unit tests)              |
+| State management | React Context + Supabase + localStorage        |
+| UI primitives    | Radix UI, Lucide React                         |
 
 ---
 
@@ -178,12 +183,12 @@ SettleX deploys a **Soroban smart contract** on Stellar Testnet as an immutable,
 
 ### Deployed Contract
 
-| Field | Value |
-|---|---|
-| Contract ID | `CDYWC4JQBCARETZ5VKDJNNY3H37WX3CRUG764NBI7JGU37MYQCKMRU74` |
-| Network | Stellar Testnet |
-| Language | Rust (`soroban-sdk` v21.7.6) |
-| Explorer | [stellar.expert → contract](https://stellar.expert/explorer/testnet/contract/CDYWC4JQBCARETZ5VKDJNNY3H37WX3CRUG764NBI7JGU37MYQCKMRU74) |
+| Field       | Value                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Contract ID | `CDYWC4JQBCARETZ5VKDJNNY3H37WX3CRUG764NBI7JGU37MYQCKMRU74`                                                                             |
+| Network     | Stellar Testnet                                                                                                                        |
+| Language    | Rust (`soroban-sdk` v21.7.6)                                                                                                           |
+| Explorer    | [stellar.expert → contract](https://stellar.expert/explorer/testnet/contract/CDYWC4JQBCARETZ5VKDJNNY3H37WX3CRUG764NBI7JGU37MYQCKMRU74) |
 
 ### Verified Contract Call Transaction
 
@@ -195,19 +200,19 @@ This transaction is a live, verifiable `record_payment` call to the deployed con
 
 ### Contract Functions
 
-| Function | Type | Purpose |
-|---|---|---|
-| `record_payment(trip_id, expense_id, payer, member, amount, tx_hash)` | Write | Stores payment record on-chain after XLM transfer |
-| `get_payments(trip_id)` | Read | Returns all payment records for a trip |
-| `is_paid(expense_id, member)` | Read | Checks if a member has already settled a specific share |
+| Function                                                              | Type  | Purpose                                                 |
+| --------------------------------------------------------------------- | ----- | ------------------------------------------------------- |
+| `record_payment(trip_id, expense_id, payer, member, amount, tx_hash)` | Write | Stores payment record on-chain after XLM transfer       |
+| `get_payments(trip_id)`                                               | Read  | Returns all payment records for a trip                  |
+| `is_paid(expense_id, member)`                                         | Read  | Checks if a member has already settled a specific share |
 
 **Error codes handled by the frontend:**
 
-| Code | Name | Meaning |
-|---|---|---|
-| #1 | `InvalidAmount` | Payment amount is zero or negative |
-| #2 | `AlreadyPaid` | This share was already settled on-chain |
-| #3 | `EmptyId` | Trip ID or expense ID is an empty string |
+| Code | Name            | Meaning                                  |
+| ---- | --------------- | ---------------------------------------- |
+| #1   | `InvalidAmount` | Payment amount is zero or negative       |
+| #2   | `AlreadyPaid`   | This share was already settled on-chain  |
+| #3   | `EmptyId`       | Trip ID or expense ID is an empty string |
 
 ### Why a Smart Contract?
 
@@ -320,11 +325,11 @@ For coverage report:
 npm run test:coverage
 ```
 
-| Test file | Coverage |
-|---|---|
-| `__tests__/split/calculator.test.ts` | Equal split, custom/weighted split, amount validation, Stellar address format checks |
+| Test file                                 | Coverage                                                                                     |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `__tests__/split/calculator.test.ts`      | Equal split, custom/weighted split, amount validation, Stellar address format checks         |
 | `__tests__/settlement/netBalance.test.ts` | Net-balance algorithm: simple debt, netting, three-person chains, wallet address passthrough |
-| `__tests__/utils/formatters.test.ts` | `formatAddress`, `formatXLM`, `stroopsToXlm` conversions |
+| `__tests__/utils/formatters.test.ts`      | `formatAddress`, `formatXLM`, `stroopsToXlm` conversions                                     |
 
 **45 tests across 3 suites — all passing.** See the test output screenshot in [Screenshots](#screenshots).
 
